@@ -3,10 +3,12 @@ import {
   drawMirroredBarVisualizer,
   drawSpiralBarVisualizer,
 } from "./lib/visualisers.js";
+import { getFrame } from "./lib/getFrame.js";
 
 const container = document.getElementById("container");
 const canvas = document.getElementById("canvas1");
 const file = document.getElementById("fileupload");
+const button = document.getElementById("renderButton");
 
 //Monitors window size and resizes canvas accordingly
 const observer = new ResizeObserver((entries) => {
@@ -15,18 +17,30 @@ const observer = new ResizeObserver((entries) => {
 });
 observer.observe(canvas);
 
-const NUM_OF_BARS = 128; //32, 64, 128, 256, 512, 1024
-const drawVisualiser = drawSpiralBarVisualizer; //Visualizer style
+const NUM_OF_BARS = 256; //32, 64, 128, 256, 512, 1024
+const drawVisualiser = drawStraitBarVisualizer; //Visualizer style
 
 const canvasCtx = canvas.getContext("2d");
 let audioSource;
 let analyser;
 
+//Render button is active only when file is chosen
+document.querySelector("input[type=file]").onchange = ({
+  target: { value },
+}) => {
+  document.querySelector("button[type=submit]").disabled = !value;
+};
+
+button.addEventListener("click", function () {
+  console.log("hi");
+});
+
 //initial visualization
 container.addEventListener("click", function () {
   const audio1 = document.getElementById("audio1");
   const audioCtx = new AudioContext();
-  audio1.src = "media/BRAZIL.wav";
+  audio1.src = "/public/media/BRAZIL.wav";
+  //audioLen = audioCtx.decodeAudioData();
 
   audio1.play();
   const analyserData = loadAnalyserPipeline(audioCtx, audio1);
@@ -36,6 +50,7 @@ container.addEventListener("click", function () {
   const barWidth = canvas.width / bufferLenght;
   let barHeight;
   let x;
+  let frameCount = 0;
 
   function animate() {
     x = 0;
@@ -52,6 +67,9 @@ container.addEventListener("click", function () {
       barHeight,
       dataArray
     );
+    //console.log(dataArray);
+    //getFrame(canvas, frameCount);
+    frameCount++;
     requestAnimationFrame(animate);
   }
   animate();
@@ -61,6 +79,7 @@ container.addEventListener("click", function () {
 file.addEventListener("change", function () {
   const files = this.files;
   console.log(files);
+  getSampleDuration(files[0]);
   const audio1 = document.getElementById("audio1");
   const audioCtx = new AudioContext();
   audio1.src = URL.createObjectURL(files[0]);
@@ -109,4 +128,22 @@ function loadAnalyserPipeline(audioCtx, audio1) {
   analyser.getByteFrequencyData(dataArray);
 
   return [bufferLenght, dataArray];
+}
+
+function getSampleDuration(audio) {
+  let reader = new FileReader();
+
+  reader.onload = function (e) {
+    let ctx = new AudioContext();
+
+    ctx.decodeAudioData(e.target.result, function (buffer) {
+      let duration = buffer.duration;
+      console.log(duration);
+    });
+  };
+  reader.onerror = function (e) {
+    console.error("An error ocurred reading this file", e);
+  };
+
+  reader.readAsArrayBuffer(audio);
 }

@@ -5,6 +5,8 @@
 }
 
 #container {
+    display: flex;
+    flex-direction: column;
     position: absolute;
     top: 0;
     left: 0;
@@ -23,13 +25,25 @@
 }
 
 #audio1 {
-    margin: 50px auto;
-    display: block;
+    margin: 50px 5px 50px 10px;
+    display: flex;
+    width: calc(100% - 20px);
 }
 
 #fileupload {
     position: absolute;
     top: 150px;
     color: white;
+    z-index: 100;
+}
+
+#audioControls {
+    display: flex;
+}
+
+#renderButton {
+    margin: 50px 10px 50px 5px;
+    color: white;
+    border-radius: 100%;
     z-index: 100;
 }
