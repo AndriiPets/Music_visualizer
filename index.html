@@ -9,15 +9,18 @@
     </head>
     <body>
         <div id="container">
+            <canvas id="renderCanvas" width="600" height="400" hidden></canvas>
             <canvas id="canvas1"></canvas>
                 <div id="audioControls">
                     <audio id="audio1" controls></audio>
                     <button type="submit" id="renderButton" disabled="true">Render</button>
                 </div>
             <input type="file" id="fileupload" accept="audio/*"/>
+            <video id="player" width="600" height="400" controls></video>
             
         </div>
-
-        <script type="module" src="/public/script.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+  
+        <script type="module" src="/public/script.js" defer></script>
     </body>
 </html>
