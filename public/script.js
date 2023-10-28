@@ -82,14 +82,14 @@ container.addEventListener("click", function () {
     frameCount++;
     requestAnimationFrame(animate);
   }
-  animate();
+  //animate();
 });
 
 //visuilize uploaded file
 file.addEventListener("change", function () {
   const files = this.files;
   console.log(files);
-  getAudioBuffer(files[0]);
+  renderInit(files[0]);
   const audio1 = document.getElementById("audio1");
   const audioCtx = new AudioContext();
   audio1.src = URL.createObjectURL(files[0]);
@@ -124,12 +124,119 @@ file.addEventListener("change", function () {
   animate();
 });
 
+function test(file) {
+  const objectURL = URL.createObjectURL(file);
+  let $audioCtx = new window.AudioContext();
+  let $audioOff = null;
+  let $analyser = null;
+  let FFT_SIZE = 256;
+
+  fetch(objectURL)
+    .then((response) => response.arrayBuffer())
+    .then((arrayBuffer) => $audioCtx.decodeAudioData(arrayBuffer))
+    .then(async (audioBuffer) => {
+      window.$audioBuffer = audioBuffer;
+      return new Promise((resolve, reject) => {
+        $audioOff = new window.OfflineAudioContext(
+          2,
+          audioBuffer.length,
+          audioBuffer.sampleRate
+        );
+        $analyser = $audioOff.createAnalyser();
+        $analyser.fftSize = FFT_SIZE;
+        $analyser.smoothingTimeConstant = 0.96;
+        $analyser.connect($audioOff.destination);
+        let source = $audioOff.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect($analyser);
+        let data = [];
+        let fps = 30;
+        let index = 0.4;
+        let length = Math.ceil(audioBuffer.duration * fps);
+        let time = 1 / fps;
+        let onSuspend = () => {
+          return new Promise((res, rej) => {
+            index += 1;
+            var raw = new Uint8Array($analyser.frequencyBinCount);
+            $analyser.getByteFrequencyData(raw);
+            data.push(raw);
+            console.log(raw);
+            if (index < length) {
+              if (time * (index + 1) < audioBuffer.duration) {
+                $audioOff.suspend(time * (index + 1)).then(onSuspend);
+              }
+              $audioOff.resume();
+            }
+            return res("OK");
+          });
+        };
+        $audioOff.suspend(time * (index + 1)).then(onSuspend);
+        source.start(0);
+        console.log("Decoding Audio-Spectrum...");
+        $audioOff
+          .startRendering()
+          .then(() => {
+            console.log("[✔] Audio-Spectrum Decoded!");
+            return resolve(data);
+          })
+          .catch((err) => {
+            console.log("Rendering failed: " + err);
+            throw { error: "Get audio data error", message: err };
+          });
+      });
+    })
+    .then(async (spectrumData) => {
+      let final = await spectrumData;
+      await prepareFrames(drawVisualiser, final, canvas, canvasCtx);
+      await loadAudioToFFMPEG(file);
+      render();
+      /* DO SOMETHING WITH SPECTRUM DATA */
+      /* spectrumData[ 0 ] is the first frame, depending of established fps */
+      /* spectrumData[ 1 ] = 2nd frame ... */
+    });
+}
+
+function test2(file) {
+  const objectURL = URL.createObjectURL(file);
+  fetch(objectURL)
+    .then((response) => response.arrayBuffer())
+    .then((arrayBuffer) => {
+      // It's of course also possible to re-use an existing
+      // AudioContext to decode the mp3 instead of creating
+      // a new one here.
+      const offlineAudioContext = new OfflineAudioContext({
+        length: 1,
+        sampleRate: 44100,
+      });
+
+      return offlineAudioContext.decodeAudioData(arrayBuffer);
+    })
+    .then((audioBuffer) => {
+      let monoChannel = audioBuffer.getChannelData(0);
+      let bufferSize = 2048;
+      window.Meyda.bufferSize = bufferSize;
+
+      let numChunks = Math.floor(monoChannel.length / bufferSize);
+      let lengthPerChunk =
+        monoChannel.length / audioBuffer.sampleRate / numChunks; //in secs
+
+      let data_chunks = [];
+      for (let i = 0; i < numChunks; i++) {
+        let chunk = monoChannel.slice(i * bufferSize, (i + 1) * bufferSize);
+        console.log(chunk);
+        let result = Meyda.extract("amplitudeSpectrum", chunk);
+        console.log(result);
+        data_chunks.push(result);
+      }
+    });
+}
+
 function loadAnalyserPipeline(audioCtx, audio1) {
   if (!audioSource) {
     audioSource = audioCtx.createMediaElementSource(audio1);
     analyser = audioCtx.createAnalyser();
-    audioSource.connect(analyser);
-    analyser.connect(audioCtx.destination);
+    const processor = createFrequencyProcessor();
+    audioSource.connect(analyser).connect(audioCtx.destination);
   }
 
   analyser.fftSize = NUM_OF_BARS;
@@ -140,97 +247,47 @@ function loadAnalyserPipeline(audioCtx, audio1) {
   return [bufferLenght, dataArray];
 }
 
-function getSampleDuration(audio) {
-  let reader = new FileReader();
+async function createFrequencyProcessor() {
+  const context = new AudioContext();
 
-  reader.onload = function (e) {
-    let ctx = new AudioContext();
+  let processorNode;
 
-    ctx.decodeAudioData(e.target.result, function (buffer) {
-      // const duration = buffer.duration;
-      // const sampleRate = buffer.sampleRate;
-      // const audioCtxOff = new OfflineAudioContext(
-      //   buffer.numberOfChannels,
-      //   duration,
-      //   sampleRate
-      // );
-      // const offAnalyser = audioCtxOff.createAnalyser();
-      // offAnalyser.fftSize = NUM_OF_BARS;
-      // offAnalyser.smoothingTimeConstant = 0.2;
-      // offAnalyser.connect(audioCtxOff.destination);
-      // const source = audioCtxOff.createBufferSource();
-      // source.buffer = buffer;
-      // source.connect(offAnalyser);
-      // let frequencyDataMatrix = [[0]];
-      // const fps = 30;
-      // let index = 1;
-      // const bufferLen = duration / sampleRate;
-      // const time = 128 / sampleRate;
-      // const onSuspend = () => {
-      //   index++;
-      //   let byteArray = new Uint8Array(analyser.frequencyBinCount);
-      //   analyser.getByteFrequencyData(byteArray);
-      //   frequencyDataMatrix.push(byteArray);
-      //   const nextTime = time * index;
-      //   console.log(
-      //     `byte array ${byteArray} next time ${nextTime} buffLen ${bufferLen} duration ${duration}`
-      //   );
-      //   if (nextTime < bufferLen) {
-      //     const nextTimeInSeconds = (index * time) / 1000;
-      //     console.log(`next time ${nextTime} index ${index}`);
-      //     audioCtxOff
-      //       .suspend(nextTime)
-      //       .then(onSuspend)
-      //       .catch((err) =>
-      //         console.log("Error in time partitioning" + ": " + err)
-      //       );
-      //   }
-      //   audioCtxOff.resume();
-      // };
-      // audioCtxOff
-      //   .suspend(0)
-      //   .then(onSuspend)
-      //   .catch((err) => console.log("Error in time partitioning" + ": " + err));
-      // source.start(0);
-      // console.log("Decoding audio spectrum...");
-      // audioCtxOff
-      //   .startRendering()
-      //   .then(() => {
-      //     console.log(
-      //       "[OK]Decoding audio spectrum decoded" +
-      //         ": " +
-      //         `${frequencyDataMatrix}`
-      //     );
-      //     return frequencyDataMatrix;
-      //   })
-      //   .catch((err) => {
-      //     console.log("Rendering failed" + ": " + err);
-      //     throw { error: "Got audio data extraction error", message: err };
-      //   });
-    });
-  };
-  reader.onerror = function (e) {
-    console.error("An error ocurred reading this file", e);
-  };
+  try {
+    processorNode = new AudioWorkletNode(context, "frequency.worklet");
+  } catch (e) {
+    try {
+      console.log("adding...");
+      await context.audioWorklet.addModule("frequency.worklet.js");
+      processorNode = new AudioWorkletNode(context, "frequency.worklet");
+    } catch (e) {
+      console.log(`** Error: Unable to create worklet node: ${e}`);
+      return null;
+    }
+  }
 
-  reader.readAsArrayBuffer(audio);
+  await context.resume();
+  return processorNode;
 }
 
 async function getAudioBuffer(file) {
   const arrayBuffer = await file.arrayBuffer();
   const audioContext = new AudioContext();
   const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-  await processFrequencyData(audioBuffer, file, {
+
+  await loadAudioToFFMPEG(file);
+
+  const dataArrayMatrix = await processFrequencyData(audioBuffer, {
     fps: 30,
-    numberOfSamples: 2 ** 13,
+    numberOfSamples: NUM_OF_BARS,
     maxDecibels: -25,
     minDecibels: -70,
-    smoothingTimeConstant: 0.2,
+    smoothingTimeConstant: 0.25,
   });
+  return dataArrayMatrix;
 }
 
 //analyze frequency data ahead of time to draw frames and send them to the rendering pipline
-async function processFrequencyData(audioBuffer, audio, options) {
+async function processFrequencyData(audioBuffer, options) {
   const {
     fps,
     numberOfSamples,
@@ -240,10 +297,8 @@ async function processFrequencyData(audioBuffer, audio, options) {
   } = options;
 
   const frameFrequencies = [];
-  await ffmpeg.load();
-  //trying to pass audio
-  const name = audio.name.split(".")[1];
-  ffmpeg.FS("writeFile", `input.${name}`, await fetchFile(audio));
+
+  //const processor = await createFrequencyProcessor();
 
   const oc = new OfflineAudioContext({
     length: audioBuffer.length,
@@ -257,7 +312,7 @@ async function processFrequencyData(audioBuffer, audio, options) {
   source.buffer = audioBuffer;
 
   const az = new AnalyserNode(oc, {
-    fftSize: numberOfSamples * 2,
+    fftSize: numberOfSamples,
     smoothingTimeConstant,
     minDecibels,
     maxDecibels,
@@ -272,18 +327,6 @@ async function processFrequencyData(audioBuffer, audio, options) {
     const frequencies = new Uint8Array(frequenciesBufferLength);
     az.getByteFrequencyData(frequencies);
 
-    // const times = new number[](az.frequencyBinCount);
-    // az.getByteTimeDomainData(times);
-    //console.log(`frequencies for frame:${currentFrame} ::${frequencies}`);
-    //drawing frame on the shadow canvas and sending it to be processd by the ffmpeg rendering pipline
-    prepareFrame(
-      drawVisualiser,
-      frequenciesBufferLength,
-      frequencies,
-      renderCanvas,
-      renderCanvasCtx,
-      currentFrame
-    );
     frameFrequencies[currentFrame] = frequencies;
 
     const nextTime = (currentFrame + 1) * msPerFrame;
@@ -299,48 +342,63 @@ async function processFrequencyData(audioBuffer, audio, options) {
 
   oc.suspend(0).then(process);
 
+  console.log("start analysing audio spectrum data!");
   source.start(0);
   await oc.startRendering();
-  localStorage.clear();
-
-  await render();
+  console.log("finished anlasyng audio spectrum data!");
+  //localStorage.clear();
 
   return frameFrequencies;
 }
 
-function prepareFrame(
+async function loadAudioToFFMPEG(audio) {
+  //trying to pass audio to ffmpeg
+  const name = audio.name.split(".")[1];
+  ffmpeg.FS("writeFile", `input.${name}`, await fetchFile(audio));
+}
+
+async function prepareFrames(
   visualisationFunc,
-  bufferLenght,
-  dataArray,
+  dataArrayMatrix,
   canvas,
-  canvasCtx,
-  count
+  canvasCtx
 ) {
+  const bufferLenght = dataArrayMatrix[0].length;
   const barWidth = canvas.width / bufferLenght;
   let barHeight;
-  let x = 0;
 
-  canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-  visualisationFunc(
-    canvasCtx,
-    canvas.width,
-    canvas.height,
-    bufferLenght,
-    x,
-    barWidth,
-    barHeight,
-    dataArray
-  );
-  console.log(`frame ${count} incoming`);
-  //const imageData = canvasCtx.getImageData(0, 0, canvas.width, canvas.height);
+  //drawing frame on the shadow canvas and sending it to be processd by the ffmpeg rendering pipline
+  for (let i in dataArrayMatrix) {
+    console.log(`frame ${i} incoming`);
 
-  //create url containing base64 encoded PNG
-  const frameURL = canvas.toDataURL("image/png");
-  //decode url into 8bit binary array
-  const frame = dataUrlToBytes(frameURL);
+    let freqencyDataArray = dataArrayMatrix[i];
+    let x = 0;
 
-  //save binary PNG in the ffmpeg filesystem
-  ffmpeg.FS("writeFile", `${count}.png`, frame);
+    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+    visualisationFunc(
+      canvasCtx,
+      canvas.width,
+      canvas.height,
+      bufferLenght,
+      x,
+      barWidth,
+      barHeight,
+      freqencyDataArray
+    );
+    await sleep(33);
+    //create url containing base64 encoded PNG
+    let frameURL = canvas.toDataURL("image/png");
+    //console.log(`frame${i}::${frameURL}`);
+    //decode url into 8bit binary array
+    let frame = dataUrlToBytes(frameURL);
+
+    //save binary PNG in the ffmpeg filesystem
+    ffmpeg.FS("writeFile", `${i}.png`, frame);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function render() {
@@ -363,4 +421,14 @@ async function render() {
   video.src = URL.createObjectURL(
     new Blob([data.buffer], { type: "video/mp4" })
   );
+}
+
+async function renderInit(file) {
+  await ffmpeg.load();
+  localStorage.clear();
+  test2(file);
+  //await getAudioBuffer(file);
+  //const dataArrayMatrix = await getAudioBuffer(file);
+  //await prepareFrames(drawVisualiser, dataArrayMatrix, canvas, canvasCtx);
+  //await render();
 }
